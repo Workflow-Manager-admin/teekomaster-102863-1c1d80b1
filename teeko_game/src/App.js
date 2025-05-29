@@ -317,44 +317,101 @@ function getValidMoves(board, player) {
 
 // ------ MINIMAX WITH ALPHA-BETA ------
 
+// Enhanced minimax with more sophisticated move evaluation and pruning
 function minimax(board, player, depth, alpha, beta, maximizing) {
-  // Depth and player context set externally
+  // Check for terminal states or depth limit
   if (checkWin(board, HUMAN) || checkWin(board, AI) || depth === 0) {
     return [evaluateBoard(board, AI), null];
   }
-  const moves = getValidMoves(board, maximizing ? player : getOpponent(player));
+  
+  // Get valid moves for the current player
+  const currentPlayer = maximizing ? player : getOpponent(player);
+  const moves = getValidMoves(board, currentPlayer);
+  
   if (moves.length === 0) {
     // No legal moves -- game is a draw
     return [0, null];
   }
+  
+  // Pre-evaluate moves for move ordering (search better moves first for better pruning)
+  const scoredMoves = moves.map(move => {
+    const nextState = makeMove(board, move);
+    const quickScore = quickEvaluate(nextState, player);
+    return { move, score: quickScore };
+  });
+  
+  // Sort moves by potential (maximize or minimize based on current player)
+  if (maximizing) {
+    scoredMoves.sort((a, b) => b.score - a.score); // Best moves first for maximizing player
+  } else {
+    scoredMoves.sort((a, b) => a.score - b.score); // Best moves first for minimizing player
+  }
+  
   let bestMove = null;
+  
   if (maximizing) {
     let maxEval = -Infinity;
-    for (const mv of moves) {
-      const nextState = makeMove(board, mv);
+    
+    for (const { move } of scoredMoves) {
+      const nextState = makeMove(board, move);
       const [evalScore] = minimax(nextState, player, depth - 1, alpha, beta, false);
+      
       if (evalScore > maxEval) {
         maxEval = evalScore;
-        bestMove = mv;
+        bestMove = move;
       }
+      
       alpha = Math.max(alpha, evalScore);
-      if (beta <= alpha) break;
+      if (beta <= alpha) break; // Alpha-beta pruning
     }
+    
     return [maxEval, bestMove];
   } else {
     let minEval = +Infinity;
-    for (const mv of moves) {
-      const nextState = makeMove(board, mv);
+    
+    for (const { move } of scoredMoves) {
+      const nextState = makeMove(board, move);
       const [evalScore] = minimax(nextState, player, depth - 1, alpha, beta, true);
+      
       if (evalScore < minEval) {
         minEval = evalScore;
-        bestMove = mv;
+        bestMove = move;
       }
+      
       beta = Math.min(beta, evalScore);
-      if (beta <= alpha) break;
+      if (beta <= alpha) break; // Alpha-beta pruning
     }
+    
     return [minEval, bestMove];
   }
+}
+
+// Quick evaluation function for move ordering (simpler than full evaluation)
+function quickEvaluate(board, player) {
+  // Simplified evaluation for move ordering
+  // Win/loss detection
+  if (checkWin(board, player)) return 1000;
+  if (checkWin(board, getOpponent(player))) return -1000;
+  
+  let score = 0;
+  
+  // Basic pattern counting
+  for (const patt of WIN_PATTERNS) {
+    let myCount = patt.filter(([x,y]) => board[x][y] === player).length;
+    let theirCount = patt.filter(([x,y]) => board[x][y] === getOpponent(player)).length;
+    
+    if (myCount > 0 && theirCount === 0) {
+      score += myCount * 3;
+    }
+    if (theirCount > 0 && myCount === 0) {
+      score -= theirCount * 3;
+    }
+  }
+  
+  // Simple center control bonus
+  if (board[2][2] === player) score += 5;
+  
+  return score;
 }
 
 // PUBLIC_INTERFACE
