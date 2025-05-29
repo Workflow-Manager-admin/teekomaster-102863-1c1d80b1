@@ -1361,6 +1361,7 @@ function TeekoMaster() {
                 position: "relative"
               }}
             >
+              <WinnerAnnouncement winner={winner} />
               {board.map((row, i) =>
                 row.map((cell, j) => (
                   <div
