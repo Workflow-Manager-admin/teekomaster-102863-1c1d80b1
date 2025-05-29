@@ -1299,7 +1299,7 @@ function TeekoMaster() {
 
   // Status string
   function statusText() {
-    if (winner === HUMAN) return 'You win!';
+    if (winner === HUMAN) return 'Human wins!';
     if (winner === AI) return 'AI wins!';
     if (!winner && !getValidMoves(board, turn).length)
       return "Draw!";
