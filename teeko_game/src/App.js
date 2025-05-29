@@ -667,106 +667,221 @@ function getStrategicOpeningMove(board) {
   const nearCenter = [[1,2], [2,1], [2,3], [3,2]]; // Adjacent to center
   const strongCorners = [[1,1], [1,3], [3,1], [3,3]]; // Diagonal from center
   
+  // Identify where human has placed pieces
   const humanPieces = [];
+  let humanCenter = false;
+  
   for (let i = 0; i < BOARD_SIZE; i++) {
     for (let j = 0; j < BOARD_SIZE; j++) {
       if (board[i][j] === HUMAN) {
         humanPieces.push([i, j]);
+        if (i === 2 && j === 2) {
+          humanCenter = true;
+        }
       }
     }
   }
   
-  // FIRST MOVE STRATEGY
+  // Collect AI pieces as well
+  const aiPieces = [];
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] === AI) {
+        aiPieces.push([i, j]);
+      }
+    }
+  }
+  
+  // ===== FIRST MOVE STRATEGY =====
   if (countPieces(board, AI) === 0) {
     // First AI move - prefer the center if available
     if (board[center[0]][center[1]] === EMPTY) {
       return {drop: [center[0], center[1], AI]};
     }
     
-    // If center taken, choose a corner position (diagonal from center)
-    // This is the optimal second-player opening in Teeko
-    for (const [x, y] of strongCorners) {
+    // If center taken (by human), use a strategic corner response
+    // Choose a corner that gives best future possibilities
+    // In Teeko, a strong counter to center opening is a specific corner
+    
+    // Prioritize corners based on potential future patterns
+    const rankedCorners = [...strongCorners].sort((a, b) => {
+      // If human has pieces adjacent to corners, avoid those corners
+      const aAdjacentToHuman = humanPieces.some(([hx, hy]) => 
+        Math.abs(hx - a[0]) <= 1 && Math.abs(hy - a[1]) <= 1);
+      const bAdjacentToHuman = humanPieces.some(([hx, hy]) => 
+        Math.abs(hx - b[0]) <= 1 && Math.abs(hy - b[1]) <= 1);
+        
+      if (aAdjacentToHuman && !bAdjacentToHuman) return 1;
+      if (!aAdjacentToHuman && bAdjacentToHuman) return -1;
+      return 0;
+    });
+    
+    for (const [x, y] of rankedCorners) {
       if (board[x][y] === EMPTY) {
         return {drop: [x, y, AI]};
       }
     }
   }
   
-  // SECOND+ MOVE STRATEGY - more complex analysis
+  // ===== SECOND MOVE STRATEGY =====
+  if (countPieces(board, AI) === 1) {
+    // Special case: If AI has center and human played adjacent, respond diagonally
+    if (board[center[0]][center[1]] === AI) {
+      if (humanPieces.length === 1) {
+        const [hx, hy] = humanPieces[0];
+        
+        // If human played adjacent to center, play on the opposite diagonal
+        if (Math.abs(hx - center[0]) <= 1 && Math.abs(hy - center[1]) <= 1) {
+          const dx = center[0] - hx;
+          const dy = center[1] - hy;
+          
+          // Play on opposite side if available
+          const ox = center[0] + dx;
+          const oy = center[1] + dy;
+          
+          if (ox >= 0 && ox < BOARD_SIZE && oy >= 0 && oy < BOARD_SIZE && 
+              board[ox][oy] === EMPTY) {
+            return {drop: [ox, oy, AI]};
+          }
+        }
+      }
+      
+      // If human didn't play adjacent or opposite isn't available,
+      // Try to form a diagonal with center
+      for (const [x, y] of strongCorners) {
+        if (board[x][y] === EMPTY) {
+          return {drop: [x, y, AI]};
+        }
+      }
+    } 
+    // If AI has a corner, and human is not in center, take center
+    else if (board[center[0]][center[1]] === EMPTY) {
+      return {drop: [center[0], center[1], AI]};
+    }
+    // If AI has a corner and human has center, take opposite corner
+    else if (humanCenter && aiPieces.length === 1) {
+      const [ax, ay] = aiPieces[0];
+      const oppositeCorner = [4 - ax, 4 - ay];
+      
+      if (board[oppositeCorner[0]][oppositeCorner[1]] === EMPTY) {
+        return {drop: [oppositeCorner[0], oppositeCorner[1], AI]};
+      }
+    }
+  }
   
-  // First look for potential winning patterns for the human and block them
-  // For each pattern, check if human has multiple pieces
-  let blockingMove = null;
+  // ===== BLOCKING PRIORITY =====
+  // First look for critical threats to block
   for (const pattern of WIN_PATTERNS) {
     const humanCount = pattern.filter(([x, y]) => board[x][y] === HUMAN).length;
     const aiCount = pattern.filter(([x, y]) => board[x][y] === AI).length;
     const emptyPositions = pattern.filter(([x, y]) => board[x][y] === EMPTY);
     
-    // If human has multiple pieces in pattern and AI has none, consider blocking
-    if (humanCount >= 2 && aiCount === 0 && emptyPositions.length > 0) {
-      // Prioritize blocking based on threat level
-      if (humanCount === 3) {
-        // Critical - block immediately
-        return {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
-      } else if (humanCount === 2) {
-        // Significant threat - record for consideration
-        blockingMove = {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
-        
-        // Check if the 2 human pieces are adjacent (stronger threat)
-        const [p1, p2] = pattern.filter(([x, y]) => board[x][y] === HUMAN);
+    // Critical threat - human has 3 in pattern
+    if (humanCount === 3 && aiCount === 0 && emptyPositions.length === 1) {
+      return {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
+    }
+  }
+  
+  // ===== OPPORTUNITY PRIORITY =====
+  // Check for our own opportunities to complete patterns
+  for (const pattern of WIN_PATTERNS) {
+    const humanCount = pattern.filter(([x, y]) => board[x][y] === HUMAN).length;
+    const aiCount = pattern.filter(([x, y]) => board[x][y] === AI).length;
+    const emptyPositions = pattern.filter(([x, y]) => board[x][y] === EMPTY);
+    
+    // We can complete a winning pattern
+    if (aiCount === 3 && humanCount === 0 && emptyPositions.length === 1) {
+      return {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
+    }
+  }
+  
+  // ===== STRONG FORMATION BUILDING =====
+  // Look for patterns where we have 2 pieces and can build toward a win
+  let bestFormationMove = null;
+  let bestFormationScore = -Infinity;
+  
+  for (const pattern of WIN_PATTERNS) {
+    const humanCount = pattern.filter(([x, y]) => board[x][y] === HUMAN).length;
+    const aiCount = pattern.filter(([x, y]) => board[x][y] === AI).length;
+    const emptyPositions = pattern.filter(([x, y]) => board[x][y] === EMPTY);
+    
+    // We have 2 pieces in pattern and human has none
+    if (aiCount === 2 && humanCount === 0 && emptyPositions.length > 0) {
+      // Check if our pieces are adjacent (stronger formation)
+      let adjacentPieces = false;
+      const aiPositions = pattern.filter(([x, y]) => board[x][y] === AI);
+      
+      if (aiPositions.length === 2) {
+        const [p1, p2] = aiPositions;
         if (Math.abs(p1[0] - p2[0]) <= 1 && Math.abs(p1[1] - p2[1]) <= 1) {
-          return blockingMove; // Adjacent pieces are more dangerous, block immediately
+          adjacentPieces = true;
+        }
+      }
+      
+      // Score each empty position in this pattern
+      for (const [ex, ey] of emptyPositions) {
+        // Create temporary board with this move
+        const testBoard = cloneBoard(board);
+        testBoard[ex][ey] = AI;
+        
+        // Score the resulting position
+        const moveScore = quickEvaluate(testBoard, AI) + (adjacentPieces ? 10 : 0);
+        
+        // Keep track of the best formation-building move
+        if (moveScore > bestFormationScore) {
+          bestFormationScore = moveScore;
+          bestFormationMove = {drop: [ex, ey, AI]};
         }
       }
     }
   }
   
-  // Now look for opportunities to advance AI's position
-  // Look for patterns where AI has pieces and human has none
-  let opportunisticMove = null;
+  // Return the best formation-building move if we found a good one
+  if (bestFormationMove && bestFormationScore > 15) {
+    return bestFormationMove;
+  }
+  
+  // ===== STANDARD BLOCKING =====
+  // Block human's developing patterns (2 pieces)
   for (const pattern of WIN_PATTERNS) {
     const humanCount = pattern.filter(([x, y]) => board[x][y] === HUMAN).length;
     const aiCount = pattern.filter(([x, y]) => board[x][y] === AI).length;
     const emptyPositions = pattern.filter(([x, y]) => board[x][y] === EMPTY);
     
-    // If AI has pieces in pattern and human has none, build on it
-    if (aiCount >= 1 && humanCount === 0 && emptyPositions.length > 0) {
-      const [x, y] = emptyPositions[0];
-      opportunisticMove = {drop: [x, y, AI]};
+    // Human has 2 pieces in pattern and we have none
+    if (humanCount === 2 && aiCount === 0 && emptyPositions.length > 0) {
+      // Check if human pieces are adjacent (more dangerous)
+      const humanPositions = pattern.filter(([x, y]) => board[x][y] === HUMAN);
       
-      // If AI already has 2+ pieces in pattern, prioritize completing it
-      if (aiCount >= 2) {
-        return opportunisticMove;
+      if (humanPositions.length === 2) {
+        const [p1, p2] = humanPositions;
+        if (Math.abs(p1[0] - p2[0]) <= 1 && Math.abs(p1[1] - p2[1]) <= 1) {
+          // Adjacent human pieces - block immediately
+          return {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
+        }
       }
+      
+      // Non-adjacent human pieces - consider blocking
+      bestFormationMove = {drop: [emptyPositions[0][0], emptyPositions[0][1], AI]};
     }
   }
   
-  // If we found a blocking move earlier, use it
-  if (blockingMove) {
-    return blockingMove;
+  // Use the previously identified blocking move if no better options
+  if (bestFormationMove) {
+    return bestFormationMove;
   }
   
-  // If we found an opportunity to advance, use it
-  if (opportunisticMove) {
-    return opportunisticMove;
-  }
-  
-  // Otherwise use positional strategy - try to maintain control of good positions
-  
+  // ===== POSITIONAL STRATEGY =====
   // If center is available, take it
   if (board[center[0]][center[1]] === EMPTY) {
     return {drop: [center[0], center[1], AI]};
   }
   
-  // Next, prioritize spots that create good formations with existing pieces
-  // Look for empty spaces adjacent to our pieces
-  const aiPieces = [];
+  // Look for empty spaces adjacent to our pieces for formation building
   const adjacentToAI = [];
   for (let i = 0; i < BOARD_SIZE; i++) {
     for (let j = 0; j < BOARD_SIZE; j++) {
       if (board[i][j] === AI) {
-        aiPieces.push([i, j]);
-        
         // Check all 8 adjacent spots
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
@@ -777,7 +892,23 @@ function getStrategicOpeningMove(board) {
             
             if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && 
                 board[nx][ny] === EMPTY) {
-              adjacentToAI.push([nx, ny]);
+              // Check if this creates a potential winning pattern
+              let patternCount = 0;
+              for (const pattern of WIN_PATTERNS) {
+                if (pattern.some(([px, py]) => px === nx && py === ny) && 
+                    pattern.some(([px, py]) => px === i && py === j) &&
+                    pattern.every(([px, py]) => board[px][py] !== HUMAN)) {
+                  patternCount++;
+                }
+              }
+              
+              adjacentToAI.push({
+                pos: [nx, ny], 
+                value: patternCount * 2 + // Pattern potential
+                       ((nx === 2 && ny === 2) ? 10 : // Center position
+                       ((nx === 1 || nx === 3) && (ny === 1 || ny === 3)) ? 8 : // Inner corners
+                       (nx === 2 || ny === 2) ? 7 : 5) // Middle axes or edges
+              });
             }
           }
         }
@@ -785,46 +916,49 @@ function getStrategicOpeningMove(board) {
     }
   }
   
-  // Filter unique adjacent positions
-  const uniqueAdjacent = adjacentToAI.filter((pos, index, self) => 
-    index === self.findIndex(p => p[0] === pos[0] && p[1] === pos[1]));
-  
-  if (uniqueAdjacent.length > 0) {
-    // Sort by position value
-    uniqueAdjacent.sort((a, b) => {
-      const aValue = a[0] === 2 && a[1] === 2 ? 10 : // center
-                    (a[0] === 1 || a[0] === 3) && (a[1] === 1 || a[1] === 3) ? 8 : // near corners
-                    (a[0] === 2 || a[1] === 2) ? 7 : // middle positions
-                    5; // remaining positions
-                    
-      const bValue = b[0] === 2 && b[1] === 2 ? 10 :
-                    (b[0] === 1 || b[0] === 3) && (b[1] === 1 || b[1] === 3) ? 8 :
-                    (b[0] === 2 || b[1] === 2) ? 7 :
-                    5;
-                    
-      return bValue - aValue; // Higher value first
-    });
-    
-    return {drop: [uniqueAdjacent[0][0], uniqueAdjacent[0][1], AI]};
+  // Filter unique adjacent positions and sort by value
+  const uniqueAdjacent = [];
+  for (const {pos, value} of adjacentToAI) {
+    if (!uniqueAdjacent.some(item => item.pos[0] === pos[0] && item.pos[1] === pos[1])) {
+      uniqueAdjacent.push({pos, value});
+    }
   }
   
-  // Then try near-center positions 
+  if (uniqueAdjacent.length > 0) {
+    // Sort by value (higher first)
+    uniqueAdjacent.sort((a, b) => b.value - a.value);
+    return {drop: [uniqueAdjacent[0].pos[0], uniqueAdjacent[0].pos[1], AI]};
+  }
+  
+  // Try near-center positions as a fallback
   for (const [x, y] of nearCenter) {
     if (board[x][y] === EMPTY) {
       return {drop: [x, y, AI]};
     }
   }
   
-  // Then try corners
+  // Try inner corners as a second fallback
   for (const [x, y] of strongCorners) {
     if (board[x][y] === EMPTY) {
       return {drop: [x, y, AI]};
     }
   }
   
-  // Fallback: choose any available move
-  const validMoves = getValidMoves(board, AI);
-  return validMoves[0];
+  // Final fallback: choose any available move with preference to central positions
+  const validMoves = availableDrops(board);
+  if (validMoves.length > 0) {
+    // Sort by distance to center
+    validMoves.sort((a, b) => {
+      const aDist = Math.abs(a[0] - 2) + Math.abs(a[1] - 2);
+      const bDist = Math.abs(b[0] - 2) + Math.abs(b[1] - 2);
+      return aDist - bDist;
+    });
+    
+    return {drop: [validMoves[0][0], validMoves[0][1], AI]};
+  }
+  
+  // Should never reach here if there are valid moves
+  return null;
 }
 
 // Iterative deepening search with enhanced move selection and evaluation
