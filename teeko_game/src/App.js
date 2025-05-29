@@ -416,9 +416,104 @@ function quickEvaluate(board, player) {
 
 // PUBLIC_INTERFACE
 function getAIMove(board) {
-  // Use Minimax: prefer shorter search in drops, longer in moves phase
-  const depth = isDropPhase(board) ? 3 : 5;
+  // Use smart depth selection based on game phase and board complexity
+  const validMoves = getValidMoves(board, AI);
+  
+  // If it's the first move, use strategic opening moves
+  if (isDropPhase(board) && countPieces(board, AI) === 0 && countPieces(board, HUMAN) <= 1) {
+    return getStrategicOpeningMove(board);
+  }
+
+  // Adjust depth based on game phase and number of pieces
+  let depth;
+  
+  if (isDropPhase(board)) {
+    // During drop phase, increase depth as pieces accumulate
+    const totalPieces = countPieces(board, HUMAN) + countPieces(board, AI);
+    depth = totalPieces < 4 ? 4 : 5; // Deeper search as game progresses
+  } else {
+    // Movement phase - use deeper search with time limits
+    depth = validMoves.length > 10 ? 4 : 6; // Depth based on branching factor
+  }
+  
+  // Use iterative deepening when many options exist
+  if (validMoves.length > 15) {
+    // Start with shallow search, then go deeper if time permits
+    return iterativeDeepeningSearch(board, Math.min(depth, 3));
+  }
+  
   const [, bestMove] = minimax(board, AI, depth, -Infinity, +Infinity, true);
+  return bestMove;
+}
+
+// Strategic opening move selection
+function getStrategicOpeningMove(board) {
+  const center = [2, 2];
+  const nearCenter = [[1,1], [1,2], [1,3], [2,1], [2,3], [3,1], [3,2], [3,3]];
+  
+  // First AI move - prefer the center if available
+  if (board[center[0]][center[1]] === EMPTY) {
+    return {drop: [center[0], center[1], AI]};
+  }
+  
+  // If center taken, pick a strategic near-center position
+  // Focus on positions that could form future patterns
+  const availableMoves = nearCenter.filter(([x,y]) => board[x][y] === EMPTY);
+  
+  if (availableMoves.length > 0) {
+    // If human is in center, choose a diagonal position
+    if (board[2][2] === HUMAN) {
+      const cornerOptions = [[1,1], [1,3], [3,1], [3,3]].filter(([x,y]) => board[x][y] === EMPTY);
+      if (cornerOptions.length > 0) {
+        const [x, y] = cornerOptions[0];
+        return {drop: [x, y, AI]};
+      }
+    }
+    
+    // Otherwise choose a position near human pieces to block potential patterns
+    const humanPieces = [];
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      for (let j = 0; j < BOARD_SIZE; j++) {
+        if (board[i][j] === HUMAN) {
+          humanPieces.push([i, j]);
+        }
+      }
+    }
+    
+    if (humanPieces.length > 0) {
+      // Find move closest to human piece
+      availableMoves.sort((a, b) => {
+        const distA = humanPieces.reduce((min, h) => 
+          Math.min(min, Math.abs(h[0] - a[0]) + Math.abs(h[1] - a[1])), Infinity);
+        const distB = humanPieces.reduce((min, h) => 
+          Math.min(min, Math.abs(h[0] - b[0]) + Math.abs(h[1] - b[1])), Infinity);
+        return distA - distB;
+      });
+      
+      const [x, y] = availableMoves[0];
+      return {drop: [x, y, AI]};
+    }
+    
+    // Default to first available near-center position
+    const [x, y] = availableMoves[0];
+    return {drop: [x, y, AI]};
+  }
+  
+  // Fallback: choose any available move
+  const validMoves = getValidMoves(board, AI);
+  return validMoves[0];
+}
+
+// Iterative deepening search to get the best move within time constraints
+function iterativeDeepeningSearch(board, maxDepth) {
+  let bestMove = null;
+  
+  // Search with increasing depth
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    const [, move] = minimax(board, AI, depth, -Infinity, +Infinity, true);
+    if (move) bestMove = move;
+  }
+  
   return bestMove;
 }
 
