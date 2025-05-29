@@ -1098,6 +1098,48 @@ function iterativeDeepeningSearch(board, maxDepth) {
   return bestMove || (moves.length > 0 ? moves[0] : null);
 }
 
+// ------------- WINNER ANNOUNCEMENT COMPONENT -------------
+
+function WinnerAnnouncement({ winner }) {
+  if (!winner) return null;
+  
+  const winnerName = winner === HUMAN ? 'Human' : 'AI';
+  const winnerColor = winner === HUMAN ? COLORS.R : COLORS.B;
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      zIndex: 10,
+      borderRadius: '14px',
+      animation: 'fadeIn 0.5s ease-in-out'
+    }}>
+      <div style={{
+        backgroundColor: '#fff',
+        padding: '20px 40px',
+        borderRadius: '10px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+        textAlign: 'center',
+        animation: 'scaleIn 0.3s ease-out'
+      }}>
+        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '10px' }}>
+          <span style={{ color: winnerColor }}>{winnerName}</span> Wins!
+        </div>
+        <div style={{ fontSize: '1rem', color: '#666', marginBottom: '15px' }}>
+          {winner === HUMAN ? 'Congratulations!' : 'Better luck next time!'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ------------- MAIN COMPONENT --------------
 
 function TeekoMaster() {
