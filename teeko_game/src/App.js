@@ -141,27 +141,170 @@ function getOpponent(player) {
   return (player === HUMAN) ? AI : HUMAN;
 }
 
-// Heuristic: (+∞ = win, -∞ = lose, otherwise count 3s, 2s)
+// Heuristic: (+∞ = win, -∞ = lose, with sophisticated pattern evaluation)
 // PUBLIC_INTERFACE
 function evaluateBoard(board, player) {
-  // Only check for winner, otherwise count #lines of 3 for player - opponent
+  const opponent = getOpponent(player);
+  
+  // Terminal states
   if (checkWin(board, player)) return 100000;
-  if (checkWin(board, getOpponent(player))) return -100000;
+  if (checkWin(board, opponent)) return -100000;
+  
+  // Initialize score
   let score = 0;
-  for (const patt of WIN_PATTERNS) {
-    let mine = patt.filter(([x,y]) => board[x][y] === player).length;
-    let theirs = patt.filter(([x,y]) => board[x][y] === getOpponent(player)).length;
-    if (mine > 0 && theirs === 0) {
-      if (mine === 3) score += 20;
-      if (mine === 2) score += 2;
-      if (mine === 1) score += 1;
-    }
-    if (theirs > 0 && mine === 0) {
-      if (theirs === 3) score -= 15;
-      if (theirs === 2) score -= 2;
-      if (theirs === 1) score -= 1;
+  
+  // --- Strategic position evaluation ---
+  // Center control is important in Teeko
+  const centerPositions = [[2,2], [1,2], [2,1], [3,2], [2,3]];
+  for (const [x, y] of centerPositions) {
+    if (board[x][y] === player) {
+      score += (x === 2 && y === 2) ? 10 : 5; // Center is most valuable
+    } else if (board[x][y] === opponent) {
+      score -= (x === 2 && y === 2) ? 10 : 5;
     }
   }
+  
+  // --- Mobility evaluation ---
+  // More available moves is better
+  if (!isDropPhase(board)) {
+    const myMoves = availableMoves(board, player).length;
+    const theirMoves = availableMoves(board, opponent).length;
+    score += (myMoves - theirMoves) * 2;
+  }
+  
+  // --- Pattern recognition ---
+  // Advanced pattern evaluation with weights based on piece proximity and tactical value
+  for (const patt of WIN_PATTERNS) {
+    const positions = patt.map(([x, y]) => board[x][y]);
+    const myCount = positions.filter(pos => pos === player).length;
+    const theirCount = positions.filter(pos => pos === opponent).length;
+    const emptyCount = positions.filter(pos => pos === EMPTY).length;
+    
+    // Only evaluate patterns where victory is still possible for either player
+    if (myCount > 0 && theirCount === 0) {
+      // My potential winning patterns
+      switch (myCount) {
+        case 3: score += 50;  // Near win - very high priority
+          break;
+        case 2: score += 10;  // Strong position
+          if (isAdjacentPair(patt, board, player)) score += 5;  // Adjacent pieces are stronger
+          break;
+        case 1: score += 2;   // Minor advantage
+          break;
+      }
+    }
+    
+    if (theirCount > 0 && myCount === 0) {
+      // Opponent's potential winning patterns - block them!
+      switch (theirCount) {
+        case 3: score -= 45;  // Imminent threat - must block!
+          break;
+        case 2: score -= 8;   // Emerging threat
+          if (isAdjacentPair(patt, board, opponent)) score -= 5;  // Adjacent pairs are dangerous
+          break;
+        case 1: score -= 1;   // Minor disadvantage
+          break;
+      }
+    }
+    
+    // Special case: squares are very powerful in Teeko
+    if (isSquarePattern(patt)) {
+      if (myCount === 3 && theirCount === 0) score += 15;  // Near square completion
+      if (theirCount === 3 && myCount === 0) score -= 15;  // Threat of opponent square
+    }
+  }
+  
+  // --- Piece configuration evaluation ---
+  score += evaluatePieceFormation(board, player);
+  score -= evaluatePieceFormation(board, opponent);
+  
+  return score;
+}
+
+// Helper function to check if pieces in a pattern are adjacent to each other
+function isAdjacentPair(pattern, board, player) {
+  for (let i = 0; i < pattern.length; i++) {
+    for (let j = i + 1; j < pattern.length; j++) {
+      const [x1, y1] = pattern[i];
+      const [x2, y2] = pattern[j];
+      if (
+        board[x1][y1] === player && 
+        board[x2][y2] === player &&
+        Math.abs(x1 - x2) <= 1 && 
+        Math.abs(y1 - y2) <= 1
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Helper function to detect if a pattern is a 2x2 square
+function isSquarePattern(pattern) {
+  if (pattern.length !== 4) return false;
+  
+  // Check if the pattern forms a square by ensuring all coordinates differ by at most 1
+  const xs = pattern.map(p => p[0]);
+  const ys = pattern.map(p => p[1]);
+  
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  
+  return maxX - minX === 1 && maxY - minY === 1;
+}
+
+// Evaluate the overall formation of pieces (compactness, control)
+function evaluatePieceFormation(board, player) {
+  let score = 0;
+  let positions = [];
+  
+  // Collect all piece positions
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] === player) {
+        positions.push([i, j]);
+      }
+    }
+  }
+  
+  // No pieces or just one piece
+  if (positions.length <= 1) return 0;
+  
+  // Calculate piece cohesion (prefer pieces that are closer together)
+  // This encourages forming patterns that could lead to wins
+  let totalDistance = 0;
+  let connections = 0;
+  
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      const [x1, y1] = positions[i];
+      const [x2, y2] = positions[j];
+      const distance = Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2));
+      
+      // Consider pieces as "connected" if they're at most 2 steps away
+      if (distance <= 2) {
+        connections++;
+        
+        // Adjacent pieces are especially valuable
+        if (distance === 1) {
+          score += 3;
+        }
+      }
+      
+      totalDistance += distance;
+    }
+  }
+  
+  // Prefer formations with more connections between pieces
+  score += connections * 2;
+  
+  // Prefer compact formations over spread out ones
+  const avgDistance = totalDistance / (positions.length * (positions.length - 1) / 2);
+  score -= Math.round(avgDistance * 1.5);
+  
   return score;
 }
 
