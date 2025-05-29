@@ -158,9 +158,9 @@ function evaluateBoard(board, player) {
   const centerPositions = [[2,2], [1,2], [2,1], [3,2], [2,3]];
   for (const [x, y] of centerPositions) {
     if (board[x][y] === player) {
-      score += (x === 2 && y === 2) ? 12 : 6; // Center is most valuable
+      score += (x === 2 && y === 2) ? 15 : 8; // Center is most valuable
     } else if (board[x][y] === opponent) {
-      score -= (x === 2 && y === 2) ? 12 : 6;
+      score -= (x === 2 && y === 2) ? 15 : 8;
     }
   }
   
@@ -168,9 +168,9 @@ function evaluateBoard(board, player) {
   // The corners and edges are less valuable than more central positions
   const positionValue = [
     [1, 2, 3, 2, 1],
-    [2, 4, 5, 4, 2],
-    [3, 5, 8, 5, 3],
-    [2, 4, 5, 4, 2],
+    [2, 5, 6, 5, 2],
+    [3, 6, 10, 6, 3],
+    [2, 5, 6, 5, 2],
     [1, 2, 3, 2, 1]
   ];
   
@@ -190,7 +190,7 @@ function evaluateBoard(board, player) {
   if (!isDropPhase(board)) {
     const myMoves = availableMoves(board, player).length;
     const theirMoves = availableMoves(board, opponent).length;
-    score += (myMoves - theirMoves) * 2;
+    score += (myMoves - theirMoves) * 3; // Increased weight for mobility
   }
   
   // --- Pattern recognition ---
@@ -205,12 +205,12 @@ function evaluateBoard(board, player) {
     if (myCount > 0 && theirCount === 0) {
       // My potential winning patterns
       switch (myCount) {
-        case 3: score += 50;  // Near win - very high priority
+        case 3: score += 80;  // Near win - extremely high priority
           break;
-        case 2: score += 10;  // Strong position
-          if (isAdjacentPair(patt, board, player)) score += 5;  // Adjacent pieces are stronger
+        case 2: score += 15;  // Strong position
+          if (isAdjacentPair(patt, board, player)) score += 10;  // Adjacent pieces are stronger
           break;
-        case 1: score += 2;   // Minor advantage
+        case 1: score += 3;   // Minor advantage
           break;
       }
     }
@@ -218,20 +218,25 @@ function evaluateBoard(board, player) {
     if (theirCount > 0 && myCount === 0) {
       // Opponent's potential winning patterns - block them!
       switch (theirCount) {
-        case 3: score -= 45;  // Imminent threat - must block!
+        case 3: score -= 75;  // Imminent threat - must block!
           break;
-        case 2: score -= 8;   // Emerging threat
-          if (isAdjacentPair(patt, board, opponent)) score -= 5;  // Adjacent pairs are dangerous
+        case 2: score -= 12;   // Emerging threat
+          if (isAdjacentPair(patt, board, opponent)) score -= 8;  // Adjacent pairs are dangerous
           break;
-        case 1: score -= 1;   // Minor disadvantage
+        case 1: score -= 2;   // Minor disadvantage
           break;
       }
     }
     
     // Special case: squares are very powerful in Teeko
     if (isSquarePattern(patt)) {
-      if (myCount === 3 && theirCount === 0) score += 15;  // Near square completion
-      if (theirCount === 3 && myCount === 0) score -= 15;  // Threat of opponent square
+      if (myCount === 3 && theirCount === 0) score += 25;  // Near square completion
+      if (theirCount === 3 && myCount === 0) score -= 25;  // Threat of opponent square
+      
+      // Partial square formations are valuable too
+      if (myCount === 2 && theirCount === 0 && isCornerAdjacentPair(patt, board, player)) {
+        score += 8; // Corner-adjacent pieces in a square pattern
+      }
     }
   }
   
@@ -240,6 +245,19 @@ function evaluateBoard(board, player) {
   score -= evaluatePieceFormation(board, opponent);
   
   return score;
+}
+
+// Helper function to check if two pieces form an adjacent corner (diagonal) in a square pattern
+function isCornerAdjacentPair(pattern, board, player) {
+  if (!isSquarePattern(pattern)) return false;
+  
+  // For a square pattern, check if two opposite corners are occupied
+  const occupied = pattern.filter(([x, y]) => board[x][y] === player);
+  if (occupied.length !== 2) return false;
+  
+  // Check if the occupied positions are diagonal to each other
+  const [p1, p2] = occupied;
+  return Math.abs(p1[0] - p2[0]) === 1 && Math.abs(p1[1] - p2[1]) === 1;
 }
 
 // Helper function to check if pieces in a pattern are adjacent to each other
