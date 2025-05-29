@@ -572,32 +572,91 @@ function quickEvaluate(board, player) {
 
 // PUBLIC_INTERFACE
 function getAIMove(board) {
-  // Use smart depth selection based on game phase and board complexity
+  // First, check for immediate wins or blocks with a quick 1-ply search
   const validMoves = getValidMoves(board, AI);
+  
+  // Check for immediate win
+  for (const move of validMoves) {
+    const nextBoard = makeMove(board, move);
+    if (checkWin(nextBoard, AI)) {
+      return move; // Return immediately if we can win in one move
+    }
+  }
+  
+  // Check for immediate blocks (opponent's potential wins)
+  const opponentMoves = getValidMoves(board, HUMAN);
+  const threatMoves = [];
+  
+  for (const oppMove of opponentMoves) {
+    const nextBoard = makeMove(board, oppMove);
+    if (checkWin(nextBoard, HUMAN)) {
+      // Find our move that blocks this threat
+      for (const myMove of validMoves) {
+        const afterMyMove = makeMove(board, myMove);
+        // After my move, recheck the opponent's winning move
+        let stillWins = false;
+        
+        for (const checkMove of getValidMoves(afterMyMove, HUMAN)) {
+          const afterCheck = makeMove(afterMyMove, checkMove);
+          if (checkWin(afterCheck, HUMAN)) {
+            stillWins = true;
+            break;
+          }
+        }
+        
+        if (!stillWins) {
+          threatMoves.push(myMove); // This move blocks the threat
+        }
+      }
+    }
+  }
+  
+  // If there's exactly one blocking move, make it
+  if (threatMoves.length === 1) {
+    return threatMoves[0];
+  }
   
   // If it's the first move, use strategic opening moves
   if (isDropPhase(board) && countPieces(board, AI) === 0 && countPieces(board, HUMAN) <= 1) {
     return getStrategicOpeningMove(board);
   }
 
-  // Adjust depth based on game phase and number of pieces
+  // Adjust depth based on game phase, number of pieces, and available moves
   let depth;
   
   if (isDropPhase(board)) {
-    // During drop phase, increase depth as pieces accumulate
+    // During drop phase, adjust depth based on the number of pieces
     const totalPieces = countPieces(board, HUMAN) + countPieces(board, AI);
-    depth = totalPieces < 4 ? 4 : 5; // Deeper search as game progresses
+    
+    if (totalPieces <= 2) {
+      depth = 5; // Early game, we can search deeper
+    } else if (totalPieces <= 5) {
+      depth = 4; // Mid-drop phase
+    } else {
+      depth = 3; // Late drop phase, more complex positions
+    }
   } else {
-    // Movement phase - use deeper search with time limits
-    depth = validMoves.length > 10 ? 4 : 6; // Depth based on branching factor
+    // Movement phase - complexity increases but we need deeper search
+    if (validMoves.length <= 8) {
+      depth = 5; // Fewer options, search deeper
+    } else if (validMoves.length <= 12) {
+      depth = 4; // Moderate complexity
+    } else {
+      depth = 3; // High complexity
+    }
+  }
+  
+  // If we're in a critical situation with blocking moves, search deeper
+  if (threatMoves.length > 0) {
+    depth += 1; // Search one level deeper when facing threats
   }
   
   // Use iterative deepening when many options exist
-  if (validMoves.length > 15) {
-    // Start with shallow search, then go deeper if time permits
-    return iterativeDeepeningSearch(board, Math.min(depth, 3));
+  if (validMoves.length > 12) {
+    return iterativeDeepeningSearch(board, depth);
   }
   
+  // Standard minimax search with the calculated depth
   const [, bestMove] = minimax(board, AI, depth, -Infinity, +Infinity, true);
   return bestMove;
 }
