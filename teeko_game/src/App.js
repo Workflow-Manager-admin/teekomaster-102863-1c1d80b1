@@ -434,9 +434,13 @@ function getValidMoves(board, player) {
 
 // Enhanced minimax with more sophisticated move evaluation and pruning
 function minimax(board, player, depth, alpha, beta, maximizing) {
-  // Check for terminal states or depth limit
-  if (checkWin(board, HUMAN) || checkWin(board, AI) || depth === 0) {
-    return [evaluateBoard(board, AI), null];
+  // Check for terminal states first for immediate cutoffs
+  if (checkWin(board, player)) return [100000, null];
+  if (checkWin(board, getOpponent(player))) return [-100000, null];
+  
+  // Depth limit reached
+  if (depth === 0) {
+    return [evaluateBoard(board, player), null];
   }
   
   // Get valid moves for the current player
@@ -451,7 +455,7 @@ function minimax(board, player, depth, alpha, beta, maximizing) {
   // Pre-evaluate moves for move ordering (search better moves first for better pruning)
   const scoredMoves = moves.map(move => {
     const nextState = makeMove(board, move);
-    const quickScore = quickEvaluate(nextState, player);
+    const quickScore = quickEvaluate(nextState, maximizing ? player : getOpponent(player));
     return { move, score: quickScore };
   });
   
@@ -469,6 +473,12 @@ function minimax(board, player, depth, alpha, beta, maximizing) {
     
     for (const { move } of scoredMoves) {
       const nextState = makeMove(board, move);
+      
+      // Check for immediate win after this move
+      if (checkWin(nextState, currentPlayer)) {
+        return [100000, move]; // Return immediately on a winning move
+      }
+      
       const [evalScore] = minimax(nextState, player, depth - 1, alpha, beta, false);
       
       if (evalScore > maxEval) {
@@ -486,6 +496,12 @@ function minimax(board, player, depth, alpha, beta, maximizing) {
     
     for (const { move } of scoredMoves) {
       const nextState = makeMove(board, move);
+      
+      // Check for immediate win after this move
+      if (checkWin(nextState, currentPlayer)) {
+        return [-100000, move]; // Return immediately on a winning move for opponent
+      }
+      
       const [evalScore] = minimax(nextState, player, depth - 1, alpha, beta, true);
       
       if (evalScore < minEval) {
@@ -503,28 +519,53 @@ function minimax(board, player, depth, alpha, beta, maximizing) {
 
 // Quick evaluation function for move ordering (simpler than full evaluation)
 function quickEvaluate(board, player) {
-  // Simplified evaluation for move ordering
+  const opponent = getOpponent(player);
+  
   // Win/loss detection
   if (checkWin(board, player)) return 1000;
-  if (checkWin(board, getOpponent(player))) return -1000;
+  if (checkWin(board, opponent)) return -1000;
   
   let score = 0;
   
-  // Basic pattern counting
+  // Basic pattern counting with emphasis on near-wins
   for (const patt of WIN_PATTERNS) {
     let myCount = patt.filter(([x,y]) => board[x][y] === player).length;
-    let theirCount = patt.filter(([x,y]) => board[x][y] === getOpponent(player)).length;
+    let theirCount = patt.filter(([x,y]) => board[x][y] === opponent).length;
     
+    // Only count patterns where victory is still possible
     if (myCount > 0 && theirCount === 0) {
-      score += myCount * 3;
+      // Exponential scoring - heavily favor patterns with more pieces
+      score += myCount * myCount * 2;
     }
     if (theirCount > 0 && myCount === 0) {
-      score -= theirCount * 3;
+      // Defensive scoring - prioritize blocking near-wins
+      score -= theirCount * theirCount * 2;
     }
   }
   
-  // Simple center control bonus
-  if (board[2][2] === player) score += 5;
+  // Positional evaluation
+  if (board[2][2] === player) score += 5; // Center
+  
+  // Count adjacent pairs (important for forming winning patterns)
+  const positions = [];
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] === player) {
+        positions.push([i, j]);
+      }
+    }
+  }
+  
+  // Count adjacent pairs
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      const [x1, y1] = positions[i];
+      const [x2, y2] = positions[j];
+      if (Math.abs(x1 - x2) <= 1 && Math.abs(y1 - y2) <= 1) {
+        score += 3;
+      }
+    }
+  }
   
   return score;
 }
