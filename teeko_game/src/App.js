@@ -158,9 +158,30 @@ function evaluateBoard(board, player) {
   const centerPositions = [[2,2], [1,2], [2,1], [3,2], [2,3]];
   for (const [x, y] of centerPositions) {
     if (board[x][y] === player) {
-      score += (x === 2 && y === 2) ? 10 : 5; // Center is most valuable
+      score += (x === 2 && y === 2) ? 12 : 6; // Center is most valuable
     } else if (board[x][y] === opponent) {
-      score -= (x === 2 && y === 2) ? 10 : 5;
+      score -= (x === 2 && y === 2) ? 12 : 6;
+    }
+  }
+  
+  // Positional evaluation based on board regions
+  // The corners and edges are less valuable than more central positions
+  const positionValue = [
+    [1, 2, 3, 2, 1],
+    [2, 4, 5, 4, 2],
+    [3, 5, 8, 5, 3],
+    [2, 4, 5, 4, 2],
+    [1, 2, 3, 2, 1]
+  ];
+  
+  // Apply positional values to both players
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] === player) {
+        score += positionValue[i][j] / 2;
+      } else if (board[i][j] === opponent) {
+        score -= positionValue[i][j] / 2;
+      }
     }
   }
   
