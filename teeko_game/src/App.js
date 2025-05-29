@@ -633,14 +633,61 @@ function getStrategicOpeningMove(board) {
   return validMoves[0];
 }
 
-// Iterative deepening search to get the best move within time constraints
+// Iterative deepening search with enhanced move selection and evaluation
 function iterativeDeepeningSearch(board, maxDepth) {
   let bestMove = null;
+  let bestScore = -Infinity;
   
-  // Search with increasing depth
+  // First check for any immediate winning move
+  const moves = getValidMoves(board, AI);
+  for (const move of moves) {
+    const nextBoard = makeMove(board, move);
+    if (checkWin(nextBoard, AI)) {
+      return move; // Return winning move immediately
+    }
+  }
+  
+  // Check for moves that block opponent's immediate win
+  for (const move of moves) {
+    // Simulate opponent's next move options if we make this move
+    const nextBoard = makeMove(board, move);
+    const oppMoves = getValidMoves(nextBoard, HUMAN);
+    
+    // Check if opponent has any winning move we should block
+    let forceBlock = false;
+    for (const oppMove of oppMoves) {
+      const oppNext = makeMove(nextBoard, oppMove);
+      if (checkWin(oppNext, HUMAN)) {
+        forceBlock = true;
+        break;
+      }
+    }
+    
+    // If we can't prevent opponent's win with this move, it's not good
+    if (!forceBlock) {
+      bestMove = move;
+    }
+  }
+  
+  // If we found a forced blocking move, return it
+  if (bestMove) {
+    return bestMove;
+  }
+  
+  // Otherwise proceed with iterative deepening
   for (let depth = 1; depth <= maxDepth; depth++) {
-    const [, move] = minimax(board, AI, depth, -Infinity, +Infinity, true);
-    if (move) bestMove = move;
+    const [score, move] = minimax(board, AI, depth, -Infinity, +Infinity, true);
+    
+    // Update best move if we found a better one
+    if (move && score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+      
+      // Early termination if we found a winning move
+      if (score > 90000) {
+        break;
+      }
+    }
   }
   
   return bestMove;
