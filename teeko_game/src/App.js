@@ -316,6 +316,7 @@ function evaluatePieceFormation(board, player) {
   // This encourages forming patterns that could lead to wins
   let totalDistance = 0;
   let connections = 0;
+  let adjacentPairs = 0;
   
   for (let i = 0; i < positions.length; i++) {
     for (let j = i + 1; j < positions.length; j++) {
@@ -329,7 +330,8 @@ function evaluatePieceFormation(board, player) {
         
         // Adjacent pieces are especially valuable
         if (distance === 1) {
-          score += 3;
+          adjacentPairs++;
+          score += 4;
         }
       }
       
@@ -340,11 +342,85 @@ function evaluatePieceFormation(board, player) {
   // Prefer formations with more connections between pieces
   score += connections * 2;
   
+  // Check for specific formation patterns
+  if (adjacentPairs >= 2 && positions.length >= 3) {
+    // Potential for forming winning patterns
+    score += 5;
+  }
+  
+  // L-shapes and diagonal patterns are strong in Teeko
+  if (positions.length >= 3 && detectStrongFormation(positions)) {
+    score += 8;
+  }
+  
   // Prefer compact formations over spread out ones
-  const avgDistance = totalDistance / (positions.length * (positions.length - 1) / 2);
-  score -= Math.round(avgDistance * 1.5);
+  if (positions.length > 1) {
+    const avgDistance = totalDistance / (positions.length * (positions.length - 1) / 2);
+    score -= Math.round(avgDistance * 2);
+  }
   
   return score;
+}
+
+// Detect strong formations like L-shapes or diagonal sequences
+function detectStrongFormation(positions) {
+  // Check for L-shapes (3 pieces where 2 form a corner)
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = 0; j < positions.length; j++) {
+      if (i === j) continue;
+      
+      const [x1, y1] = positions[i];
+      const [x2, y2] = positions[j];
+      
+      // Check if i and j form a corner
+      if ((Math.abs(x1 - x2) === 1 && Math.abs(y1 - y2) === 0) || 
+          (Math.abs(x1 - x2) === 0 && Math.abs(y1 - y2) === 1)) {
+        
+        // Look for a third piece that completes an L with these two
+        for (let k = 0; k < positions.length; k++) {
+          if (k === i || k === j) continue;
+          
+          const [x3, y3] = positions[k];
+          
+          // Check if k forms an L with i and j
+          if ((x3 === x1 && Math.abs(y3 - y1) === 1 && x2 !== x3) || 
+              (y3 === y1 && Math.abs(x3 - x1) === 1 && y2 !== y3) ||
+              (x3 === x2 && Math.abs(y3 - y2) === 1 && x1 !== x3) ||
+              (y3 === y2 && Math.abs(x3 - x2) === 1 && y1 !== y3)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  // Check for diagonal sequences (3 in a diagonal)
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = 0; j < positions.length; j++) {
+      if (i === j) continue;
+      
+      const [x1, y1] = positions[i];
+      const [x2, y2] = positions[j];
+      
+      // Check if i and j are on a diagonal
+      if (Math.abs(x1 - x2) === 1 && Math.abs(y1 - y2) === 1) {
+        // Look for a third piece that extends this diagonal
+        for (let k = 0; k < positions.length; k++) {
+          if (k === i || k === j) continue;
+          
+          const [x3, y3] = positions[k];
+          
+          // Check if k continues the diagonal from i through j
+          if ((x3 - x2 === x2 - x1 && y3 - y2 === y2 - y1) || 
+              (x1 - x2 === x2 - x3 && y1 - y2 === y2 - y3)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  return false;
 }
 
 // PUBLIC_INTERFACE
