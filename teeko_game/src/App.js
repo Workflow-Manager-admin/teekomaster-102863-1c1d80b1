@@ -831,6 +831,7 @@ function getStrategicOpeningMove(board) {
 function iterativeDeepeningSearch(board, maxDepth) {
   let bestMove = null;
   let bestScore = -Infinity;
+  let previousBestMoves = [];
   
   // First check for any immediate winning move
   const moves = getValidMoves(board, AI);
@@ -842,49 +843,125 @@ function iterativeDeepeningSearch(board, maxDepth) {
   }
   
   // Check for moves that block opponent's immediate win
+  const blockingMoves = [];
   for (const move of moves) {
     // Simulate opponent's next move options if we make this move
     const nextBoard = makeMove(board, move);
     const oppMoves = getValidMoves(nextBoard, HUMAN);
+    let canWin = false;
     
-    // Check if opponent has any winning move we should block
-    let forceBlock = false;
+    // Check if opponent has any winning move after our move
     for (const oppMove of oppMoves) {
       const oppNext = makeMove(nextBoard, oppMove);
       if (checkWin(oppNext, HUMAN)) {
-        forceBlock = true;
+        canWin = true;
         break;
       }
     }
     
-    // If we can't prevent opponent's win with this move, it's not good
-    if (!forceBlock) {
-      bestMove = move;
+    // If the opponent cannot win after this move, it's a good blocking move
+    if (!canWin) {
+      blockingMoves.push(move);
     }
   }
   
-  // If we found a forced blocking move, return it
-  if (bestMove) {
-    return bestMove;
+  // If we found exactly one blocking move, return it immediately
+  if (blockingMoves.length === 1) {
+    return blockingMoves[0];
   }
   
-  // Otherwise proceed with iterative deepening
+  // Pre-evaluate all moves quickly for initial ordering
+  const scoredMoves = moves.map(move => {
+    const nextBoard = makeMove(board, move);
+    const quickScore = quickEvaluate(nextBoard, AI);
+    return { move, score: quickScore };
+  }).sort((a, b) => b.score - a.score);
+  
+  // If we're at depth 1, return the best move from the quick evaluation
+  if (maxDepth === 1) {
+    return scoredMoves[0].move;
+  }
+  
+  // Start with a limited set of promising moves for deeper searches
+  const candidateMoves = scoredMoves.slice(0, Math.min(7, scoredMoves.length));
+  
+  // Proceed with iterative deepening
   for (let depth = 1; depth <= maxDepth; depth++) {
-    const [score, move] = minimax(board, AI, depth, -Infinity, +Infinity, true);
+    let currentBestMove = null;
+    let currentBestScore = -Infinity;
     
-    // Update best move if we found a better one
-    if (move && score > bestScore) {
-      bestScore = score;
-      bestMove = move;
+    // For deeper searches, prioritize moves that were good at shallower depths
+    const movesToSearch = depth <= 2 ? candidateMoves 
+                         : scoredMoves.sort((a, b) => {
+                             // Prioritize moves that were best at previous depths
+                             const aIsPrevious = previousBestMoves.some(m => 
+                               (m.drop && a.move.drop && m.drop[0] === a.move.drop[0] && m.drop[1] === a.move.drop[1]) ||
+                               (m.slide && a.move.slide && m.slide[0][0] === a.move.slide[0][0] && m.slide[0][1] === a.move.slide[0][1])
+                             );
+                             const bIsPrevious = previousBestMoves.some(m => 
+                               (m.drop && b.move.drop && m.drop[0] === b.move.drop[0] && m.drop[1] === b.move.drop[1]) ||
+                               (m.slide && b.move.slide && m.slide[0][0] === b.move.slide[0][0] && m.slide[0][1] === b.move.slide[0][1])
+                             );
+                             
+                             if (aIsPrevious && !bIsPrevious) return -1;
+                             if (!aIsPrevious && bIsPrevious) return 1;
+                             return b.score - a.score;
+                           });
+    
+    // Only search the top N moves for deeper depths to save computation
+    const searchLimit = depth <= 2 ? movesToSearch.length 
+                      : Math.max(5, Math.min(10, Math.ceil(movesToSearch.length / 2)));
+    
+    for (let i = 0; i < searchLimit; i++) {
+      const { move } = movesToSearch[i];
+      const nextBoard = makeMove(board, move);
+      const [score] = minimax(nextBoard, AI, depth, -Infinity, +Infinity, false);
+      
+      if (score > currentBestScore) {
+        currentBestScore = score;
+        currentBestMove = move;
+      }
       
       // Early termination if we found a winning move
       if (score > 90000) {
-        break;
+        return move;
+      }
+    }
+    
+    // Update best move if we found a better one at this depth
+    if (currentBestMove && currentBestScore > bestScore) {
+      bestScore = currentBestScore;
+      bestMove = currentBestMove;
+      previousBestMoves.unshift(currentBestMove); // Add to start of previous best moves
+      if (previousBestMoves.length > 3) {
+        previousBestMoves.pop(); // Keep only the 3 most recent best moves
+      }
+    }
+    
+    // If time is a concern, we could add a time check here to terminate early if needed
+  }
+  
+  // Use blocking moves if available and if our best move isn't already blocking
+  if (blockingMoves.length > 0 && bestMove) {
+    const isBlocking = blockingMoves.some(bMove => 
+      (bMove.drop && bestMove.drop && bMove.drop[0] === bestMove.drop[0] && bMove.drop[1] === bestMove.drop[1]) ||
+      (bMove.slide && bestMove.slide && bMove.slide[0][0] === bestMove.slide[0][0] && bMove.slide[0][1] === bestMove.slide[0][1])
+    );
+    
+    if (!isBlocking) {
+      // Score all blocking moves and take the best one
+      const scoredBlockingMoves = blockingMoves.map(move => {
+        const nextBoard = makeMove(board, move);
+        return { move, score: evaluateBoard(nextBoard, AI) };
+      }).sort((a, b) => b.score - a.score);
+      
+      if (scoredBlockingMoves.length > 0) {
+        return scoredBlockingMoves[0].move;
       }
     }
   }
   
-  return bestMove;
+  return bestMove || (moves.length > 0 ? moves[0] : null);
 }
 
 // ------------- MAIN COMPONENT --------------
