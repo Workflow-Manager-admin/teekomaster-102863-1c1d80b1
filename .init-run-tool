@@ -1,4 +1,1 @@
-{
-    "command": "PORT=<port> BROWSER=none npm start",
-    "working_directory": "/home/kavia/workspace/code-generation/teekomaster-102863-1c1d80b1/teeko_game"
-}
+{\n    \"command\": \"PORT=<port> BROWSER=none npm start\",\n    \"working_directory\": \"/home/kavia/workspace/code-generation/teekomaster-102863-1c1d80b1/teeko_game\"\n}
